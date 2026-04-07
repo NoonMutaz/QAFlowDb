@@ -4,12 +4,19 @@ EXPOSE 8080
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
-COPY ["QAFlowDb.csproj", "."]
-RUN dotnet restore
+
+# Copy the csproj from the subfolder
+COPY ["WebApplication2/WebApplication2.csproj", "WebApplication2/"]
+
+RUN dotnet restore "WebApplication2/WebApplication2.csproj"
+
+# Copy everything
 COPY . .
-RUN dotnet publish -c Release -o /app/publish
+
+# Publish the project
+RUN dotnet publish "WebApplication2/WebApplication2.csproj" -c Release -o /app/publish
 
 FROM base AS final
 WORKDIR /app
 COPY --from=build /app/publish .
-ENTRYPOINT ["dotnet", "QAFlowDb.dll"]
+ENTRYPOINT ["dotnet", "WebApplication2.dll"]
