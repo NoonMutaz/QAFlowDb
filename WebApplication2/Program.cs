@@ -5,7 +5,7 @@ using Scalar.AspNetCore;
 using System.Text;
 using WebApplication2.Data;
 using WebApplication2.Models;
-using WebApplication2.Models.Dto;
+//using WebApplication2.Models.Dto;
 using WebApplication2.Models.DTO;
 
 var builder = WebApplication.CreateBuilder(args);
