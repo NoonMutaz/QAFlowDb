@@ -1,6 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
-
-namespace WebApplication2.Models
+﻿namespace WebApplication2.Models
 {
     public class User
     {
