@@ -237,7 +237,7 @@ public class ProjectsController : ControllerBase
         if (project == null)
             return NotFound("Project not found");
 
-        // ✅ Fix 2: ModelState validation
+        //  ModelState validation
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
@@ -330,9 +330,9 @@ public class ProjectsController : ControllerBase
     {
         var userId = GetUserId();
         var isOwner = await _context.ProjectMembers
-            .AnyAsync(m => m.ProjectId == id && m.UserId == userId && m.Role == "owner");
+            .AnyAsync(m => m.ProjectId == id && m.UserId == userId && m.Role == "owner" && m.Role == "member");
 
-        if (!isOwner) return Forbid("Only owners can view members");
+        //if (!isOwner) return Forbid("Only owners can view members");
 
         var members = await _context.ProjectMembers
             .Where(m => m.ProjectId == id && m.Status == "accepted")
@@ -378,7 +378,7 @@ public class ProjectsController : ControllerBase
         return Ok(new { message = "Member removed successfully" });
     }
 
-    // ✅ ADD: UPDATE Member Role (Owner Only)
+    // UPDATE Member Role (Owner Only)
     [HttpPatch("{id}/members/{memberId}")]
     public async Task<IActionResult> UpdateMemberRole(int id, int memberId, [FromBody] UpdateMemberRoleDto dto)
     {
@@ -400,8 +400,7 @@ public class ProjectsController : ControllerBase
 
         // Validate role
         if (dto.Role != "owner" && dto.Role != "member" && dto.Role != "viewer")
-            return BadRequest("Invalid role");
-
+        return BadRequest("Invalid role");
         membership.Role = dto.Role;
         await _context.SaveChangesAsync();
 
