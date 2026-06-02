@@ -83,4 +83,52 @@ public class AuthController : ControllerBase
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
+
+
+    [HttpPut("profile")]
+    public async Task<IActionResult> UpdateProfile(UpdateProfileDto dto)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        var user = await _db.Users.FindAsync(int.Parse(userId));
+
+        if (user == null)
+            return NotFound();
+
+        user.Name = dto.Name;
+        user.Email = dto.Email;
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            id = user.Id,
+            name = user.Name,
+            email = user.Email
+        });
+    }
+
+    [HttpGet("profile")]
+    public async Task<IActionResult> GetProfile()
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrEmpty(userId))
+            return Unauthorized();
+
+        var user = await _db.Users.FindAsync(int.Parse(userId));
+
+        if (user == null)
+            return NotFound();
+
+        return Ok(new
+        {
+            id = user.Id,
+            name = user.Name,
+            email = user.Email
+        });
+    }
 }
