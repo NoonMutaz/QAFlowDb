@@ -53,14 +53,14 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// ← Auto-run migrations on startup
+//  Auto-run migrations on startup
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     db.Database.Migrate();
 }
 
-// ← Show Scalar in both dev and production
+//  Show Scalar in both dev and production
 app.MapOpenApi();
 app.MapScalarApiReference();
 

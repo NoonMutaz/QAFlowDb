@@ -161,9 +161,14 @@ public class ProjectsController : ControllerBase
     [HttpGet("check-name")]
     public async Task<IActionResult> CheckName([FromQuery] string name)
     {
-        var userId = GetUserId();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return BadRequest(new { message = "Name query parameter is required" });
+        }
+
+        // Fix: Query globally matching the exact logic used inside CreateProject
         var exists = await _context.Projects
-            .AnyAsync(p => p.Name.ToLower() == name.ToLower() && p.UserId == userId);
+            .AnyAsync(p => p.Name.ToLower() == name.Trim().ToLower());
 
         return Ok(new { exists });
     }
