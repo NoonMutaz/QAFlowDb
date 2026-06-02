@@ -21,7 +21,7 @@ public class ProjectsController : ControllerBase
         _context = context;
     }
 
-    // DEBUG ENDPOINT  REMOVE IN PRODUCTION
+    // DEBUG ENDPOINT , REMOVE IN PRODUCTION
     [HttpGet("debug")]
     [AllowAnonymous]
     public IActionResult Debug()
@@ -51,7 +51,7 @@ public class ProjectsController : ControllerBase
 
     private int GetUserId()
     {
-        // Try all possible claim names
+        //Try all possible claim names
         var idClaim = User.FindFirst("id") ??
                       User.FindFirst(ClaimTypes.NameIdentifier) ??
                       User.FindFirst("sub") ??
@@ -116,6 +116,16 @@ public class ProjectsController : ControllerBase
     {
         var userId = GetUserId();
 
+        var projectExists = await _context.Projects
+            .AnyAsync(p => p.Name.ToLower() == dto.Name.Trim().ToLower());
+
+        if (projectExists)
+        {
+            return Conflict(new
+            {
+                message = "Project name already exists"
+            });
+        }
         // Verify user exists
         if (!await _context.Users.AnyAsync(u => u.Id == userId))
             return BadRequest($"User {userId} not found");
@@ -148,7 +158,15 @@ public class ProjectsController : ControllerBase
             Role = "owner"
         });
     }
+    [HttpGet("check-name")]
+    public async Task<IActionResult> CheckName([FromQuery] string name)
+    {
+        var userId = GetUserId();
+        var exists = await _context.Projects
+            .AnyAsync(p => p.Name.ToLower() == name.ToLower() && p.UserId == userId);
 
+        return Ok(new { exists });
+    }
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteProject(int id)
     {
@@ -212,7 +230,7 @@ public class ProjectsController : ControllerBase
         _context.ProjectMembers.Add(newMembership);
         await _context.SaveChangesAsync();
 
-        //   Send email notification here
+        //  Send email notification  
         return Ok(new
         {
             message = "Invite sent successfully",
