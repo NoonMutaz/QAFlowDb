@@ -17,5 +17,11 @@
 
         public string? AttachmentUrl { get; set; }
         public Project Project { get; set; } = null!;
+
+        public int? AssignedToUserId { get; set; }
+        public string? AssignedToEmail { get; set; }
+        public int? AssignedById { get; set; }
+        public string? AssignedByName { get; set; }
+        public long? AssignedAt { get; set; }
     }
 }

@@ -10,7 +10,7 @@ namespace WebApplication2.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("api/projects/{projectId}/bugs")]  // Keep this route
+[Route("api/projects/{projectId}/bugs")]
 public class BugsController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
@@ -20,7 +20,8 @@ public class BugsController : ControllerBase
         _context = context;
     }
 
-    // ✅ COPY THIS EXACT METHOD FROM ProjectsController
+    #region Helpers & Authentication
+
     private int GetUserId()
     {
         var idClaim = User.FindFirst("id") ??
@@ -40,7 +41,6 @@ public class BugsController : ControllerBase
         return userId;
     }
 
-    // ✅ UPDATED HasAccess using GetUserId()
     private bool HasAccess(int projectId)
     {
         var userId = GetUserId();
@@ -50,55 +50,15 @@ public class BugsController : ControllerBase
             m.Status == "accepted");
     }
 
-    // ✅ YOUR NEW UPDATE FIELD ENDPOINT
-    [HttpPatch("{bugId}")]
-    public async Task<IActionResult> UpdateField(int projectId, int bugId, [FromBody] UpdateFieldDto dto)
-    {
-        try
-        {
-            if (!HasAccess(projectId))  // Now uses GetUserId()!
-                return Forbid();
+    #endregion
 
-            var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
-                b.Id == bugId && b.ProjectId == projectId);
+    #region Endpoints
 
-            if (bug == null) return NotFound();
-
-            // Only allow editable fields for owner/member
-            switch (dto.Field.ToLower())
-            {
-                case "expectedresult":
-                    bug.ExpectedResult = dto.Value;
-                    break;
-                case "actualresult":
-                    bug.ActualResult = dto.Value;
-                    break;
-                case "description":
-                    bug.Description = dto.Value;
-                    break;
-                case "note":
-                    bug.Note = dto.Value;
-                    break;
-                default:
-                    return BadRequest("Invalid field");
-            }
-
-            await _context.SaveChangesAsync();
-            return Ok(bug);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Unauthorized();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"UpdateField error: {ex}");
-            return StatusCode(500, "Internal server error");
-        }
-    }
-        [HttpGet]
+    [HttpGet]
     public async Task<IActionResult> Get(int projectId)
     {
+        if (!HasAccess(projectId)) return Forbid();
+
         var bugs = await _context.Bugs
             .Where(b => b.ProjectId == projectId)
             .ToListAsync();
@@ -106,37 +66,11 @@ public class BugsController : ControllerBase
         return Ok(bugs);
     }
 
-    [HttpPatch("{bugId}/status")]
-    public async Task<IActionResult> Status(int projectId, int bugId, [FromBody] UpdateStatusDto dto)
-    {
-        var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
-            b.Id == bugId && b.ProjectId == projectId);
-
-        if (bug == null) return NotFound();
-
-        bug.Status = dto.Status;
-        await _context.SaveChangesAsync();
-
-        return Ok(bug);
-    }
-
-    [HttpDelete("{bugId}")]
-    public async Task<IActionResult> Delete(int projectId, int bugId)
-    {
-        var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
-            b.Id == bugId && b.ProjectId == projectId);
-
-        if (bug == null) return NotFound();
-
-        _context.Bugs.Remove(bug);
-        await _context.SaveChangesAsync();
-
-        return NoContent();
-    }
-
     [HttpPost]
     public async Task<IActionResult> Create(int projectId, [FromBody] CreateBugDto dto)
     {
+        if (!HasAccess(projectId)) return Forbid();
+
         var existingBugs = await _context.Bugs
             .Where(b => b.ProjectId == projectId)
             .ToListAsync();
@@ -172,9 +106,133 @@ public class BugsController : ControllerBase
         return Ok(bug);
     }
 
+    /// <summary>
+    /// Handles inline text updates (Expected, Actual, Description, Note, URL) 
+    /// AND custom assignment parameters dynamically!
+    /// </summary>
+    [HttpPatch("{bugId}")]
+    public async Task<IActionResult> UpdateField(int projectId, int bugId, [FromBody] UpdateFieldDto dto)
+    {
+        try
+        {
+            if (!HasAccess(projectId)) return Forbid();
+
+            var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
+                b.Id == bugId && b.ProjectId == projectId);
+
+            if (bug == null) return NotFound();
+
+            string assignedEmail = null;
+
+            switch (dto.Field.ToLower())
+            {
+                case "url":
+                    bug.Url = dto.Value;
+                    break;
+                case "expectedresult":
+                    bug.ExpectedResult = dto.Value;
+                    break;
+                case "actualresult":
+                    bug.ActualResult = dto.Value;
+                    break;
+                case "description":
+                    bug.Description = dto.Value;
+                    break;
+                case "note":
+                    bug.Note = dto.Value;
+                    break;
+                case "assignedtouserid":
+                    if (string.IsNullOrWhiteSpace(dto.Value))
+                    {
+                        bug.AssignedToUserId = null;
+                        bug.AssignedToEmail = null;
+                        bug.AssignedById = null;
+                        bug.AssignedByName = null;
+                        bug.AssignedAt = null;
+                    }
+                    else
+                    {
+                        if (!int.TryParse(dto.Value, out int targetUserId))
+                            return BadRequest("Invalid User ID format");
+
+                        var projectMember = await _context.ProjectMembers
+                            .Include(m => m.User)
+                            .FirstOrDefaultAsync(m => m.ProjectId == projectId && m.UserId == targetUserId && m.Status == "accepted");
+
+                        if (projectMember == null)
+                            return BadRequest("Target assignment user is not an active team member.");
+
+                        // Get the ID of the person making the change (the logged-in user)
+                        var assignerId = GetUserId();
+                        var assigner = await _context.Users.FirstOrDefaultAsync(u => u.Id == assignerId);
+
+                        // Update target assignee info
+                        bug.AssignedToUserId = targetUserId;
+                        bug.AssignedToEmail = projectMember.User.Email;
+
+                        // Automatically stamp assignment tracking context metadata
+                        bug.AssignedById = assignerId;
+                        bug.AssignedByName = assigner?.Name ?? assigner?.Email ?? "System";
+                        bug.AssignedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    }
+                    break;
+                default:
+                    return BadRequest($"Field '{dto.Field}' is invalid or protected.");
+            }
+
+            await _context.SaveChangesAsync();
+
+            // Return back the updated bug, plus computed fields for assignment
+            return Ok(new
+            {
+                bug.Id,
+                bug.BugId,
+                bug.ExpectedResult,
+                bug.ActualResult,
+                bug.Description,
+                bug.Note,
+                bug.Url,
+                bug.Status,
+                bug.Priority,
+                bug.AssignedToUserId,
+                bug.AssignedToEmail,
+                bug.AssignedById,
+                bug.AssignedByName,
+                bug.AssignedAt
+            });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Unauthorized();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"UpdateField error: {ex}");
+            return StatusCode(500, "Internal server error");
+        }
+    }
+
+    [HttpPatch("{bugId}/status")]
+    public async Task<IActionResult> Status(int projectId, int bugId, [FromBody] UpdateStatusDto dto)
+    {
+        if (!HasAccess(projectId)) return Forbid();
+
+        var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
+            b.Id == bugId && b.ProjectId == projectId);
+
+        if (bug == null) return NotFound();
+
+        bug.Status = dto.Status;
+        await _context.SaveChangesAsync();
+
+        return Ok(bug);
+    }
+
     [HttpPatch("{bugId}/priority")]
     public async Task<IActionResult> Priority(int projectId, int bugId, [FromBody] UpdatePriorityDto dto)
     {
+        if (!HasAccess(projectId)) return Forbid();
+
         var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
             b.Id == bugId && b.ProjectId == projectId);
 
@@ -185,49 +243,33 @@ public class BugsController : ControllerBase
 
         return Ok(bug);
     }
-    //[HttpPatch("{bugId}")]
-    //public async Task<IActionResult> UpdateField(int projectId, int bugId, [FromBody] UpdateFieldDto dto)
-    //{
-    //    var userId = int.Parse(User.FindFirst("id")?.Value ?? "0");
 
-    //    if (!HasAccess(projectId, userId))
-    //        return Forbid();
-
-    //    var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
-    //        b.Id == bugId && b.ProjectId == projectId);
-
-    //    if (bug == null) return NotFound();
-
-    //    // Only allow specific editable fields
-    //    switch (dto.Field.ToLower())
-    //    {
-    //        case "expectedresult":
-    //            bug.ExpectedResult = dto.Value;
-    //            break;
-    //        case "actualresult":
-    //            bug.ActualResult = dto.Value;
-    //            break;
-    //        case "description":
-    //            bug.Description = dto.Value;
-    //            break;
-    //        case "note":
-    //            bug.Note = dto.Value;
-    //            break;
-    //        default:
-    //            return BadRequest("Invalid field");
-    //    }
-
-    //    await _context.SaveChangesAsync();
-    //    return Ok(bug);
-    //}
-    [HttpPost("{bugId}/upload")]
-    public async Task<IActionResult> Upload(int projectId, int bugId, IFormFile file)
+    [HttpDelete("{bugId}")]
+    public async Task<IActionResult> Delete(int projectId, int bugId)
     {
+        if (!HasAccess(projectId)) return Forbid();
+
         var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
             b.Id == bugId && b.ProjectId == projectId);
 
         if (bug == null) return NotFound();
-        if (file == null || file.Length == 0) return BadRequest("No file");
+
+        _context.Bugs.Remove(bug);
+        await _context.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [HttpPost("{bugId}/upload")]
+    public async Task<IActionResult> Upload(int projectId, int bugId, IFormFile file)
+    {
+        if (!HasAccess(projectId)) return Forbid();
+
+        var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
+            b.Id == bugId && b.ProjectId == projectId);
+
+        if (bug == null) return NotFound();
+        if (file == null || file.Length == 0) return BadRequest("No file uploaded");
 
         var allowed = new[] { "image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4", "video/webm" };
         if (!allowed.Contains(file.ContentType)) return BadRequest("Invalid file type");
@@ -247,5 +289,35 @@ public class BugsController : ControllerBase
         return Ok(new { url = bug.AttachmentUrl });
     }
 
+    [HttpGet("/api/bugs/me")] // Route: GET api/projects/all/bugs/me  
+    public async Task<IActionResult> GetMyAssignedBugs()
+    {
+        try
+        {
+            // 1. Resolve user ID using the clean parsing standard from ProjectsController
+            var claimValue = User.FindFirstValue(ClaimTypes.NameIdentifier) ??
+                             User.FindFirstValue("id") ??
+                             User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
 
+            if (string.IsNullOrEmpty(claimValue) || !int.TryParse(claimValue, out int userId))
+            {
+                return Unauthorized(new { message = "User identification token is invalid or missing." });
+            }
+
+            // 2. Query bugs assigned to this user directly without blocking project owners/creators
+            var myBugs = await _context.Bugs
+                .Where(b => b.AssignedToUserId == userId)
+                .OrderByDescending(b => b.Priority == "High")
+                .ThenByDescending(b => b.Id)
+                .ToListAsync();
+
+            return Ok(myBugs);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"GetMyAssignedBugs error: {ex}");
+            return StatusCode(500, "Internal server error");
+        }
+    }
+    #endregion
 }
