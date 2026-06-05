@@ -14,10 +14,13 @@ namespace WebApplication2.Controllers;
 public class BugsController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
+    private readonly ActivityLogger _logger;
 
-    public BugsController(ApplicationDbContext context)
+    // Fixed & Configured Constructor Dependency Injection
+    public BugsController(ApplicationDbContext context, ActivityLogger logger)
     {
         _context = context;
+        _logger = logger;
     }
 
     #region Helpers & Authentication
@@ -71,6 +74,8 @@ public class BugsController : ControllerBase
     {
         if (!HasAccess(projectId)) return Forbid();
 
+        var userId = GetUserId();
+
         var existingBugs = await _context.Bugs
             .Where(b => b.ProjectId == projectId)
             .ToListAsync();
@@ -103,13 +108,12 @@ public class BugsController : ControllerBase
         _context.Bugs.Add(bug);
         await _context.SaveChangesAsync();
 
+        // LOGGING: Bug Creation
+        await _logger.LogAsync(projectId, userId, "Create", "Bug", bug.Id, $"Created bug {bug.BugId}: {bug.Name}");
+
         return Ok(bug);
     }
 
-    /// <summary>
-    /// Handles inline text updates (Expected, Actual, Description, Note, URL) 
-    /// AND custom assignment parameters dynamically!
-    /// </summary>
     [HttpPatch("{bugId}")]
     public async Task<IActionResult> UpdateField(int projectId, int bugId, [FromBody] UpdateFieldDto dto)
     {
@@ -117,12 +121,14 @@ public class BugsController : ControllerBase
         {
             if (!HasAccess(projectId)) return Forbid();
 
+            var userId = GetUserId();
+
             var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
                 b.Id == bugId && b.ProjectId == projectId);
 
             if (bug == null) return NotFound();
 
-            string assignedEmail = null;
+            string logDetails = $"Updated field '{dto.Field}'";
 
             switch (dto.Field.ToLower())
             {
@@ -149,6 +155,7 @@ public class BugsController : ControllerBase
                         bug.AssignedById = null;
                         bug.AssignedByName = null;
                         bug.AssignedAt = null;
+                        logDetails = "Unassigned bug";
                     }
                     else
                     {
@@ -162,18 +169,16 @@ public class BugsController : ControllerBase
                         if (projectMember == null)
                             return BadRequest("Target assignment user is not an active team member.");
 
-                        // Get the ID of the person making the change (the logged-in user)
                         var assignerId = GetUserId();
                         var assigner = await _context.Users.FirstOrDefaultAsync(u => u.Id == assignerId);
 
-                        // Update target assignee info
                         bug.AssignedToUserId = targetUserId;
                         bug.AssignedToEmail = projectMember.User.Email;
-
-                        // Automatically stamp assignment tracking context metadata
                         bug.AssignedById = assignerId;
                         bug.AssignedByName = assigner?.Name ?? assigner?.Email ?? "System";
                         bug.AssignedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+                        logDetails = $"Assigned bug to {bug.AssignedToEmail}";
                     }
                     break;
                 default:
@@ -182,7 +187,9 @@ public class BugsController : ControllerBase
 
             await _context.SaveChangesAsync();
 
-            // Return back the updated bug, plus computed fields for assignment
+            // LOGGING: Dynamic Field / Assignment Updates
+            await _logger.LogAsync(projectId, userId, "Update", "Bug", bug.Id, $"{logDetails} on {bug.BugId}");
+
             return Ok(new
             {
                 bug.Id,
@@ -217,13 +224,18 @@ public class BugsController : ControllerBase
     {
         if (!HasAccess(projectId)) return Forbid();
 
+        var userId = GetUserId();
         var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
             b.Id == bugId && b.ProjectId == projectId);
 
         if (bug == null) return NotFound();
 
+        var oldStatus = bug.Status;
         bug.Status = dto.Status;
         await _context.SaveChangesAsync();
+
+        // LOGGING: Status Change
+        await _logger.LogAsync(projectId, userId, "UpdateStatus", "Bug", bug.Id, $"Changed status of {bug.BugId} from '{oldStatus}' to '{dto.Status}'");
 
         return Ok(bug);
     }
@@ -233,13 +245,18 @@ public class BugsController : ControllerBase
     {
         if (!HasAccess(projectId)) return Forbid();
 
+        var userId = GetUserId();
         var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
             b.Id == bugId && b.ProjectId == projectId);
 
         if (bug == null) return NotFound();
 
+        var oldPriority = bug.Priority;
         bug.Priority = dto.Priority;
         await _context.SaveChangesAsync();
+
+        // LOGGING: Priority Change
+        await _logger.LogAsync(projectId, userId, "UpdatePriority", "Bug", bug.Id, $"Changed priority of {bug.BugId} from '{oldPriority}' to '{dto.Priority}'");
 
         return Ok(bug);
     }
@@ -249,6 +266,7 @@ public class BugsController : ControllerBase
     {
         if (!HasAccess(projectId)) return Forbid();
 
+        var userId = GetUserId();
         var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
             b.Id == bugId && b.ProjectId == projectId);
 
@@ -256,6 +274,9 @@ public class BugsController : ControllerBase
 
         _context.Bugs.Remove(bug);
         await _context.SaveChangesAsync();
+
+        // LOGGING: Bug Deletion
+        await _logger.LogAsync(projectId, userId, "Delete", "Bug", bugId, $"Deleted bug {bug.BugId}: {bug.Name}");
 
         return NoContent();
     }
@@ -265,6 +286,7 @@ public class BugsController : ControllerBase
     {
         if (!HasAccess(projectId)) return Forbid();
 
+        var userId = GetUserId();
         var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
             b.Id == bugId && b.ProjectId == projectId);
 
@@ -286,15 +308,17 @@ public class BugsController : ControllerBase
         bug.AttachmentUrl = $"/uploads/{fileName}";
         await _context.SaveChangesAsync();
 
+        // LOGGING: File Attachment Upload
+        await _logger.LogAsync(projectId, userId, "UploadAttachment", "Bug", bug.Id, $"Uploaded attachment context for {bug.BugId}");
+
         return Ok(new { url = bug.AttachmentUrl });
     }
 
-    [HttpGet("/api/bugs/me")] // Route: GET api/projects/all/bugs/me  
+    [HttpGet("/api/bugs/me")]
     public async Task<IActionResult> GetMyAssignedBugs()
     {
         try
         {
-            // 1. Resolve user ID using the clean parsing standard from ProjectsController
             var claimValue = User.FindFirstValue(ClaimTypes.NameIdentifier) ??
                              User.FindFirstValue("id") ??
                              User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
@@ -304,7 +328,6 @@ public class BugsController : ControllerBase
                 return Unauthorized(new { message = "User identification token is invalid or missing." });
             }
 
-            // 2. Query bugs assigned to this user directly without blocking project owners/creators
             var myBugs = await _context.Bugs
                 .Where(b => b.AssignedToUserId == userId)
                 .OrderByDescending(b => b.Priority == "High")

@@ -14,17 +14,18 @@ namespace WebApplication2.Controllers;
 public class ProjectsController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
+    private readonly ActivityLogger _logger;
 
-    public ProjectsController(ApplicationDbContext context)
+    public ProjectsController(ApplicationDbContext context, ActivityLogger logger)
     {
         _context = context;
+        _logger = logger;
     }
 
     #region Scaffolding & Helpers
 
     private int GetUserId()
     {
-        // Consolidating to the most common standard OIDC/JWT claim types
         var claimValue = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("id");
 
         if (string.IsNullOrEmpty(claimValue) || !int.TryParse(claimValue, out int userId))
@@ -43,7 +44,7 @@ public class ProjectsController : ControllerBase
     public async Task<IActionResult> GetProjects()
     {
         var userId = GetUserId();
-        
+
         var projects = await _context.ProjectMembers
             .Where(m => m.UserId == userId && m.Status == "accepted")
             .Select(m => new ProjectDto
@@ -63,7 +64,7 @@ public class ProjectsController : ControllerBase
     public async Task<IActionResult> GetProject(int id)
     {
         var userId = GetUserId();
-        
+
         var hasAccess = await _context.ProjectMembers
             .AnyAsync(m => m.ProjectId == id && m.UserId == userId && m.Status == "accepted");
 
@@ -88,7 +89,6 @@ public class ProjectsController : ControllerBase
     {
         var userId = GetUserId();
 
-        // 1. Normalized check for existing project name
         var normalizedName = dto.Name.Trim().ToLower();
         var projectExists = await _context.Projects.AnyAsync(p => p.Name.ToLower() == normalizedName);
 
@@ -102,7 +102,6 @@ public class ProjectsController : ControllerBase
             return BadRequest($"User {userId} not found");
         }
 
-        // 2. Database Transaction to guarantee both actions succeed or fail together
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
@@ -123,8 +122,11 @@ public class ProjectsController : ControllerBase
                 Role = "owner",
                 Status = "accepted"
             });
-
             await _context.SaveChangesAsync();
+
+            // LOGGING: Project Created
+            await _logger.LogAsync(project.Id, userId, "Create", "Project", project.Id, $"Created project {project.Name}");
+
             await transaction.CommitAsync();
 
             return Ok(new ProjectDto
@@ -178,6 +180,9 @@ public class ProjectsController : ControllerBase
 
         await _context.SaveChangesAsync();
 
+        // LOGGING: Project Metadata Updates
+        await _logger.LogAsync(id, userId, "Update", "Project", id, $"Updated metadata configurations for project {project.Name}");
+
         return Ok(new ProjectDto
         {
             Id = project.Id,
@@ -202,7 +207,10 @@ public class ProjectsController : ControllerBase
 
         _context.Projects.Remove(project);
         await _context.SaveChangesAsync();
-        
+
+        // Note: Logger won't link cascading tables if IDs vanish, but we can capture the event track
+        await _logger.LogAsync(id, userId, "Delete", "Project", id, $"Deleted project configuration system: {project.Name}");
+
         return NoContent();
     }
 
@@ -223,7 +231,7 @@ public class ProjectsController : ControllerBase
         if (invitedUser == null) return NotFound("User not found");
 
         var existingMembership = await _context.ProjectMembers
-            .FirstOrDefaultAsync(m => m.ProjectId == id && m.UserId == invitedUser.Id);  
+            .FirstOrDefaultAsync(m => m.ProjectId == id && m.UserId == invitedUser.Id);
 
         if (existingMembership != null)
         {
@@ -231,7 +239,6 @@ public class ProjectsController : ControllerBase
             {
                 return BadRequest("User already has active membership or pending invite");
             }
-            // Clean up old declined invite seamlessly
             _context.ProjectMembers.Remove(existingMembership);
         }
 
@@ -244,7 +251,10 @@ public class ProjectsController : ControllerBase
         };
 
         _context.ProjectMembers.Add(newMembership);
-        await _context.SaveChangesAsync(); 
+        await _context.SaveChangesAsync();
+
+        // LOGGING: User Invited
+        await _logger.LogAsync(id, userId, "InviteMember", "ProjectMember", newMembership.Id, $"Sent pending project invitation context to {dto.Email}");
 
         return Ok(new { message = "Invite sent successfully", memberId = newMembership.Id });
     }
@@ -258,7 +268,7 @@ public class ProjectsController : ControllerBase
             .Where(m => m.UserId == userId && m.Status == "pending")
             .Select(m => new
             {
-                m.Id, 
+                m.Id,
                 m.Role,
                 Project = new
                 {
@@ -292,6 +302,10 @@ public class ProjectsController : ControllerBase
 
         invite.Status = "accepted";
         await _context.SaveChangesAsync();
+
+        // LOGGING: User Accepted Invitation
+        await _logger.LogAsync(invite.ProjectId, userId, "AcceptInvite", "ProjectMember", invite.Id, "Accepted invitation request parameters.");
+
         return Ok();
     }
 
@@ -306,6 +320,10 @@ public class ProjectsController : ControllerBase
 
         invite.Status = "declined";
         await _context.SaveChangesAsync();
+
+        // LOGGING: User Declined Invitation
+        await _logger.LogAsync(invite.ProjectId, userId, "DeclineInvite", "ProjectMember", invite.Id, "Declined entry request criteria.");
+
         return Ok();
     }
 
@@ -313,8 +331,7 @@ public class ProjectsController : ControllerBase
     public async Task<IActionResult> GetProjectMembers(int id)
     {
         var userId = GetUserId();
-        
-        // FIXED: Check if user is associated with the project at all (Owner, Member, or Viewer)
+
         var hasAccess = await _context.ProjectMembers
             .AnyAsync(m => m.ProjectId == id && m.UserId == userId && m.Status == "accepted");
 
@@ -330,7 +347,7 @@ public class ProjectsController : ControllerBase
                 Name = m.User.Name ?? m.User.Email,
                 m.Role,
             })
-            .OrderByDescending(m => m.Role == "owner") 
+            .OrderByDescending(m => m.Role == "owner")
             .ThenBy(m => m.Name)
             .ToListAsync();
 
@@ -356,6 +373,9 @@ public class ProjectsController : ControllerBase
         _context.ProjectMembers.Remove(membership);
         await _context.SaveChangesAsync();
 
+        // LOGGING: Member Kicked/Removed
+        await _logger.LogAsync(id, userId, "RemoveMember", "ProjectMember", membership.Id, $"Removed user identity id {memberId} from workspace access privileges.");
+
         return Ok(new { message = "Member removed successfully" });
     }
 
@@ -378,8 +398,12 @@ public class ProjectsController : ControllerBase
 
         if (membership == null) return NotFound("Member not found");
 
+        var oldRole = membership.Role;
         membership.Role = dto.Role;
         await _context.SaveChangesAsync();
+
+        // LOGGING: Member Role Context Mutations
+        await _logger.LogAsync(id, userId, "UpdateMemberRole", "ProjectMember", membership.Id, $"Changed user {memberId} permission tier tracking from '{oldRole}' to '{dto.Role}'");
 
         return Ok(new
         {
@@ -388,6 +412,47 @@ public class ProjectsController : ControllerBase
             newRole = dto.Role
         });
     }
+    [HttpGet("{id}/activity")]
+    public async Task<IActionResult> GetProjectActivity(int id)
+    {
+        var userId = GetUserId();
 
+        // FIXED: Verify the user is explicitly the OWNER of the project
+        var isOwner = await _context.ProjectMembers
+            .AnyAsync(m => m.ProjectId == id &&
+                           m.UserId == userId &&
+                           m.Status == "accepted" &&
+                           m.Role == "owner"); // Enforces owner-only permission
+
+        if (!isOwner)
+        {
+            // Returns a 403 Forbidden status if a regular member or viewer tries to access it
+            return Forbid();
+        }
+
+        // Fetch the latest 50 activities if authorization passes
+        var activities = await _context.ActivityLogs
+            .Where(a => a.ProjectId == id)
+            .Include(a => a.User)
+            .OrderByDescending(a => a.CreatedAt)
+            .Take(50)
+            .Select(a => new
+            {
+                a.Id,
+                a.Action,
+                a.EntityType,
+                a.EntityId,
+                a.Details,
+                a.CreatedAt,
+                User = new
+                {
+                    Name = a.User.Name ?? a.User.Email,
+                    Email = a.User.Email
+                }
+            })
+            .ToListAsync();
+
+        return Ok(activities);
+    }
     #endregion
 }
