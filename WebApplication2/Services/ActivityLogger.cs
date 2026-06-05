@@ -11,12 +11,12 @@ public class ActivityLogger
     }
 
     public async Task LogAsync(
-        int projectId,
-        int userId,
-        string action,
-        string entityType,
-        int? entityId = null,
-        string? details = null)
+    int projectId,
+    int userId,
+    string action,
+    string entityType,
+    int? entityId = null,
+    string? details = null)
     {
         var log = new ActivityLog
         {
@@ -30,7 +30,6 @@ public class ActivityLogger
         };
 
         _context.ActivityLogs.Add(log);
-
         await _context.SaveChangesAsync();
     }
 }

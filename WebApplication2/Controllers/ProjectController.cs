@@ -197,23 +197,45 @@ public class ProjectsController : ControllerBase
     public async Task<IActionResult> DeleteProject(int id)
     {
         var userId = GetUserId();
-        var isOwner = await _context.ProjectMembers
-            .AnyAsync(m => m.ProjectId == id && m.UserId == userId && m.Role == "owner");
 
-        if (!isOwner) return Forbid();
+        var isOwner = await _context.ProjectMembers
+            .AnyAsync(m => m.ProjectId == id &&
+                           m.UserId == userId &&
+                           m.Role == "owner");
+
+        if (!isOwner)
+            return Forbid();
 
         var project = await _context.Projects.FindAsync(id);
-        if (project == null) return NotFound();
+
+        if (project == null)
+            return NotFound();
+
+        
+        await _logger.LogAsync(
+            id,
+            userId,
+            "Delete",
+            "Project",
+            id,
+            $"Deleted project: {project.Name}");
+
+        // 
+        await _logger.LogAsync(
+    id,
+    userId,
+    "Delete",
+    "Project",
+    id,
+    $"Deleted project: {project.Name}");
 
         _context.Projects.Remove(project);
-        await _context.SaveChangesAsync();
 
-        // Note: Logger won't link cascading tables if IDs vanish, but we can capture the event track
-        await _logger.LogAsync(id, userId, "Delete", "Project", id, $"Deleted project configuration system: {project.Name}");
+        await _context.SaveChangesAsync();
+        
 
         return NoContent();
     }
-
     #endregion
 
     #region Invites & Membership
