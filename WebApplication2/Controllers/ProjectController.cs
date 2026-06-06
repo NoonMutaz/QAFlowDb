@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using WebApplication2.Data;
+using WebApplication2.DTOs;
 using WebApplication2.Models;
 using WebApplication2.Models.DTO;
 
@@ -211,7 +212,7 @@ public class ProjectsController : ControllerBase
         if (project == null)
             return NotFound();
 
-        
+        // 🟢 FIXED: Removed the duplicated log registration statement block
         await _logger.LogAsync(
             id,
             userId,
@@ -220,25 +221,14 @@ public class ProjectsController : ControllerBase
             id,
             $"Deleted project: {project.Name}");
 
-        // 
-        await _logger.LogAsync(
-    id,
-    userId,
-    "Delete",
-    "Project",
-    id,
-    $"Deleted project: {project.Name}");
-
         _context.Projects.Remove(project);
-
         await _context.SaveChangesAsync();
-        
 
         return NoContent();
     }
     #endregion
 
-    #region Invites & Membership
+    #region Invites, Membership & Analytics
 
     [HttpPost("{id}/invite")]
     public async Task<IActionResult> InviteUser(int id, [FromBody] InviteDto dto)
@@ -434,25 +424,20 @@ public class ProjectsController : ControllerBase
             newRole = dto.Role
         });
     }
+
     [HttpGet("{id}/activity")]
     public async Task<IActionResult> GetProjectActivity(int id)
     {
         var userId = GetUserId();
 
-        // FIXED: Verify the user is explicitly the OWNER of the project
         var isOwner = await _context.ProjectMembers
             .AnyAsync(m => m.ProjectId == id &&
                            m.UserId == userId &&
                            m.Status == "accepted" &&
-                           m.Role == "owner"); // Enforces owner-only permission
+                           m.Role == "owner");
 
-        if (!isOwner)
-        {
-            // Returns a 403 Forbidden status if a regular member or viewer tries to access it
-            return Forbid();
-        }
+        if (!isOwner) return Forbid();
 
-        // Fetch the latest 50 activities if authorization passes
         var activities = await _context.ActivityLogs
             .Where(a => a.ProjectId == id)
             .Include(a => a.User)
@@ -475,6 +460,68 @@ public class ProjectsController : ControllerBase
             .ToListAsync();
 
         return Ok(activities);
+    }
+
+    [HttpGet("{id}/analytics")]
+    public async Task<ActionResult<ProjectAnalyticsDto>> GetProjectAnalytics(int id)
+    {
+        var userId = GetUserId();
+
+        // 1. Security Check: Verify user has active access to this specific project workspace
+        var hasAccess = await _context.ProjectMembers
+            .AnyAsync(m => m.ProjectId == id && m.UserId == userId && m.Status == "accepted");
+
+        if (!hasAccess) return Forbid();
+
+        // 2. Verify project entity structure exists
+        var projectExists = await _context.Projects.AnyAsync(p => p.Id == id);
+        if (!projectExists) return NotFound();
+
+        // 3. Fetch aggregate summary numbers metrics calculations
+        // NOTE: Matching your model's default status values ("notFixed")
+        var openBugs = await _context.Bugs.CountAsync(b => b.ProjectId == id && b.Status == "notFixed");
+        var fixedBugs = await _context.Bugs.CountAsync(b => b.ProjectId == id && b.Status == "Fixed");
+        var criticalBugs = await _context.Bugs.CountAsync(b => b.ProjectId == id && b.Priority == "High" && b.Status != "Fixed");
+
+        // 4. Find top developer contributor (Most bugs marked as Fixed)
+        // Using AssignedByName directly from your model flat values
+        var topContributor = await _context.Bugs
+            .Where(b => b.ProjectId == id && b.Status == "Fixed" && b.AssignedByName != null)
+            .GroupBy(b => b.AssignedByName)
+            .OrderByDescending(g => g.Count())
+            .Select(g => g.Key)
+            .FirstOrDefaultAsync() ?? "None";
+
+        // 5. Find most active tester (Most bugs filed/created)
+        // Since bugs are filed through the system, we can extract who performed the original logged actions, 
+        // or evaluate assignments. If you decide to add a CreatedByName/CreatedByEmail field to your Bug model 
+        // down the road, swap this property there. For now, it queries against assigned tasks:
+        var mostActiveTester = await _context.Bugs
+            .Where(b => b.ProjectId == id && b.AssignedByName != null)
+            .GroupBy(b => b.AssignedByName)
+            .OrderByDescending(g => g.Count())
+            .Select(g => g.Key)
+            .FirstOrDefaultAsync() ?? "None";
+
+        return Ok(new ProjectAnalyticsDto
+        {
+            OpenBugs = openBugs,
+            FixedBugs = fixedBugs,
+            CriticalBugs = criticalBugs,
+            TopContributor = topContributor,
+            MostActiveTester = mostActiveTester
+        });
+    }
+
+    [HttpGet("api/projects/{projectId}/testcases/{id}")]
+    public async Task<IActionResult> GetTestCaseDetails(int id)
+    {
+        var testCase = await _context.TestCases
+            .Include(t => t.LinkedBugs)
+            .FirstOrDefaultAsync(t => t.Id == id);
+
+        if (testCase == null) return NotFound();
+        return Ok(testCase);
     }
     #endregion
 }

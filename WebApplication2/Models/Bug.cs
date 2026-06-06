@@ -23,5 +23,8 @@
         public int? AssignedById { get; set; }
         public string? AssignedByName { get; set; }
         public long? AssignedAt { get; set; }
+
+        public int? TestCaseId { get; set; }
+        public TestCase TestCase { get; set; }
     }
 }
