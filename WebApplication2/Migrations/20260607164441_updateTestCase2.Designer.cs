@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using WebApplication2.Data;
 
@@ -11,9 +12,11 @@ using WebApplication2.Data;
 namespace WebApplication2.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260607164441_updateTestCase2")]
+    partial class updateTestCase2
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -60,6 +63,36 @@ namespace WebApplication2.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("ActivityLogs");
+                });
+
+            modelBuilder.Entity("TestCase", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ExpectedResult")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Steps")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("TestCases");
                 });
 
             modelBuilder.Entity("WebApplication2.Models.Bug", b =>
@@ -212,36 +245,6 @@ namespace WebApplication2.Migrations
                     b.ToTable("ProjectMembers");
                 });
 
-            modelBuilder.Entity("WebApplication2.Models.TestCase", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("ExpectedResult")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("ProjectId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Steps")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("TestCases");
-                });
-
             modelBuilder.Entity("WebApplication2.Models.User", b =>
                 {
                     b.Property<int>("Id")
@@ -289,6 +292,17 @@ namespace WebApplication2.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("TestCase", b =>
+                {
+                    b.HasOne("WebApplication2.Models.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+                });
+
             modelBuilder.Entity("WebApplication2.Models.Bug", b =>
                 {
                     b.HasOne("WebApplication2.Models.Project", "Project")
@@ -297,7 +311,7 @@ namespace WebApplication2.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("WebApplication2.Models.TestCase", "TestCase")
+                    b.HasOne("TestCase", "TestCase")
                         .WithMany("LinkedBugs")
                         .HasForeignKey("TestCaseId");
 
@@ -331,25 +345,14 @@ namespace WebApplication2.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("WebApplication2.Models.TestCase", b =>
+            modelBuilder.Entity("TestCase", b =>
                 {
-                    b.HasOne("WebApplication2.Models.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
+                    b.Navigation("LinkedBugs");
                 });
 
             modelBuilder.Entity("WebApplication2.Models.Project", b =>
                 {
                     b.Navigation("Members");
-                });
-
-            modelBuilder.Entity("WebApplication2.Models.TestCase", b =>
-                {
-                    b.Navigation("LinkedBugs");
                 });
 #pragma warning restore 612, 618
         }

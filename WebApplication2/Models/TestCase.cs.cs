@@ -1,16 +1,24 @@
-﻿// Models/TestCase.cs
-using WebApplication2.Models;
+﻿using System.Text.Json.Serialization; //  
+using System.Collections.Generic;
 
-public class TestCase
+namespace WebApplication2.Models
 {
-    public int Id { get; set; }
-    public string Code { get; set; } // e.g., "TC-001"
-    public string Title { get; set; } // e.g., "Verify Login"
-    public string Steps { get; set; } // Store steps as markdown text or a list string
-    public string ExpectedResult { get; set; }
-    public int ProjectId { get; set; }
+    public class TestCase
+    {
+        public int Id { get; set; }
 
-    // Navigation property: One test case can track multiple linked bugs
-    public ICollection<Bug> LinkedBugs { get; set; } = new List<Bug>();
+        public string Title { get; set; } = "";
 
+        public List<string> Steps { get; set; } = new List<string>();
+
+        public string ExpectedResult { get; set; } = "";
+
+        public int ProjectId { get; set; }
+
+        [JsonIgnore] //   Prevents fetching the project parent data infinitely
+        public Project Project { get; set; } = null!;
+
+        [JsonIgnore] //   Breaks the infinite loop (Bug -> TestCase -> LinkedBugs -> Bug)
+        public ICollection<Bug> LinkedBugs { get; set; } = new List<Bug>();
+    }
 }

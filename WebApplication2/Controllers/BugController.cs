@@ -64,6 +64,7 @@ public class BugsController : ControllerBase
         if (!HasAccess(projectId)) return Forbid();
 
         var bugs = await _context.Bugs
+            .Include(b => b.TestCase)
             .Where(b => b.ProjectId == projectId)
             .ToListAsync();
 
@@ -72,7 +73,10 @@ public class BugsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(int projectId, [FromBody] CreateBugDto dto)
     {
-        var userId = GetUserId(); //    userId  from   token
+        var userId = GetUserId(); // userId from token
+
+        // 💥 FIX: Fetch the user's details to populate the missing 'CreatedByName' property
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
 
         var existingBugs = await _context.Bugs
             .Where(b => b.ProjectId == projectId)
@@ -101,11 +105,23 @@ public class BugsController : ControllerBase
             Status = "notFixed",
             CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             ProjectId = projectId,
-            CreatedById = userId.ToString(), //    
+            CreatedById = userId.ToString(),
+            CreatedByName = user?.Name ?? user?.Email ?? "Unknown Tester", //   Saved so analytics/tables can read it
+            TestCaseId = dto.TestCaseId //  Links the Test Case from the frontend payload
         };
 
         _context.Bugs.Add(bug);
         await _context.SaveChangesAsync();
+
+        //  
+        await _logger.LogAsync(
+            projectId,
+            userId,
+            "Create",
+            "Bug",
+            bug.Id,
+            $"Reported a new bug {bug.BugId}: {bug.Name}"
+        );
 
         return Ok(bug);
     }
@@ -308,6 +324,9 @@ public class BugsController : ControllerBase
 
         return Ok(new { url = bug.AttachmentUrl });
     }
+
+
+
 
     [HttpGet("/api/bugs/me")]
     public async Task<IActionResult> GetMyAssignedBugs()

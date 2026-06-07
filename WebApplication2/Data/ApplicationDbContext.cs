@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using WebApplication2.Models;
 namespace WebApplication2.Data
 {
@@ -22,6 +23,13 @@ namespace WebApplication2.Data
             modelBuilder.Entity<User>()
               .HasIndex(u => u.Email)
               .IsUnique();
+
+            modelBuilder.Entity<TestCase>()
+        .Property(t => t.Steps)
+        .HasConversion(
+            v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+            v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>()
+        );
         }
     }
 

@@ -10,6 +10,8 @@
         public string Note { get; set; } = "";
         public string Priority { get; set; } = "Medium";
         public string? AttachmentUrl { get; set; }
+
+        public int? TestCaseId { get; set; }
     }
     public class UpdateFieldDto
     {

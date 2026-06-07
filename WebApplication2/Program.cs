@@ -66,7 +66,7 @@ app.MapScalarApiReference();
 
 if (!app.Environment.IsDevelopment())
 {
-    app.UseHttpsRedirection(); // ← only redirect in production when behind HTTPS proxy
+    app.UseHttpsRedirection(); //  only redirect in production when behind HTTPS proxy
 }
 
 app.UseStaticFiles();

@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using System.Text.Json;
 using WebApplication2.Data;
 using WebApplication2.DTOs;
 using WebApplication2.Models;
@@ -164,7 +165,19 @@ public class ProjectsController : ControllerBase
     public async Task<IActionResult> UpdateProject(int id, [FromBody] UpdateProjectDto dto)
     {
         var userId = GetUserId();
+        var normalizedName = dto.Name.Trim().ToLower();
 
+        var exists = await _context.Projects.AnyAsync(p =>
+            p.Id != id &&
+            p.Name.ToLower() == normalizedName);
+
+        if (exists)
+        {
+            return Conflict(new
+            {
+                message = "Project name already exists"
+            });
+        }
         var isOwner = await _context.ProjectMembers
             .AnyAsync(m => m.ProjectId == id && m.UserId == userId && m.Role == "owner");
 
@@ -212,7 +225,6 @@ public class ProjectsController : ControllerBase
         if (project == null)
             return NotFound();
 
-        // 🟢 FIXED: Removed the duplicated log registration statement block
         await _logger.LogAsync(
             id,
             userId,
@@ -536,15 +548,95 @@ public class ProjectsController : ControllerBase
         });
     }
 
-    [HttpGet("api/projects/{projectId}/testcases/{id}")]
-    public async Task<IActionResult> GetTestCaseDetails(int id)
+    #endregion
+
+    #region Test Cases
+
+    // 1. جلب قائمة الاختبارات الخاصة بمشروع معين
+  
+
+
+    // 2. جلب تفاصيل اختبار محدد (باستخدام معرف المشروع ومعرف الاختبار)
+    [HttpGet("{projectId}/testcases/{id}")]
+    public async Task<IActionResult> GetTestCaseDetails(int projectId, int id)
     {
         var testCase = await _context.TestCases
             .Include(t => t.LinkedBugs)
-            .FirstOrDefaultAsync(t => t.Id == id);
+            .FirstOrDefaultAsync(t => t.Id == id && t.ProjectId == projectId);
 
-        if (testCase == null) return NotFound();
+        if (testCase == null) return NotFound("Test case not found in this project");
+
         return Ok(testCase);
     }
+
+    // 3. إنشاء اختبار جديد مرتبط بمشروع
+    [HttpPost("{id}/testcases")]
+    public async Task<IActionResult> CreateTestCase(int id, [FromBody] CreateTestCaseDto dto)
+    {
+        var userId = GetUserId(); // Captured context actor identity token
+
+        var testCase = new TestCase
+        {
+            Title = dto.Title,
+            Steps = dto.Steps,
+            ExpectedResult = dto.ExpectedResult,
+
+            ProjectId = id
+        };
+
+        _context.TestCases.Add(testCase);
+        await _context.SaveChangesAsync();
+
+        //  Activity logging registration hooks active here now
+        await _logger.LogAsync(
+            id,
+            userId,
+            "Create",
+            "TestCase",
+            testCase.Id,
+            $"Created test case: {testCase.Title}"
+        );
+
+        return Ok(testCase);
+    }
+        [HttpGet("api/projects/{projectId}/bugs")]
+    public async Task<IActionResult> GetBugs(int projectId)
+    {
+        var bugs = await _context.Bugs
+            .Where(b => b.ProjectId == projectId)
+            .Include(b => b.TestCase) //   pulls the TestCase tracking data
+            .OrderByDescending(b => b.CreatedAt)
+            .ToListAsync();
+
+        return Ok(bugs);
+    }
+    #region Test Cases
+
+    // 1. جلب قائمة الاختبارات الخاصة بمشروع معين
+    [HttpGet("/api/projects/{id}/testcases")]
+    public async Task<IActionResult> GetProjectTestCases(int id)
+    {
+        var testCases = await _context.TestCases
+            .Where(tc => tc.ProjectId == id)
+            .Select(tc => new
+            {
+                Id = tc.Id,
+                Title = tc.Title,
+                ExpectedResult = tc.ExpectedResult,
+                Steps = tc.Steps,
+                //  Project the collection of linked bugs so the frontend can map over them
+                LinkedBugs = tc.LinkedBugs.Select(b => new
+                {
+                    Id = b.Id,
+                    BugId = b.BugId, // Maps to strings like "BUG-001"
+                    Status = b.Status // Maps to strings like "notFixed", "in-progress", "fixed"
+                }).ToList()
+            })
+            .ToListAsync();
+
+        return Ok(testCases);
+    }
     #endregion
+    #endregion
+
 }
