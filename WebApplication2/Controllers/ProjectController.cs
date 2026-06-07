@@ -467,40 +467,63 @@ public class ProjectsController : ControllerBase
     {
         var userId = GetUserId();
 
-        // 1. Security Check: Verify user has active access to this specific project workspace
+        // Check project access
         var hasAccess = await _context.ProjectMembers
-            .AnyAsync(m => m.ProjectId == id && m.UserId == userId && m.Status == "accepted");
+            .AnyAsync(m =>
+                m.ProjectId == id &&
+                m.UserId == userId &&
+                m.Status == "accepted");
 
-        if (!hasAccess) return Forbid();
+        if (!hasAccess)
+            return Forbid();
 
-        // 2. Verify project entity structure exists
-        var projectExists = await _context.Projects.AnyAsync(p => p.Id == id);
-        if (!projectExists) return NotFound();
+        // Check project exists
+        var projectExists = await _context.Projects
+            .AnyAsync(p => p.Id == id);
 
-        // 3. Fetch aggregate summary numbers metrics calculations
-        // NOTE: Matching your model's default status values ("notFixed")
-        var openBugs = await _context.Bugs.CountAsync(b => b.ProjectId == id && b.Status == "notFixed");
-        var fixedBugs = await _context.Bugs.CountAsync(b => b.ProjectId == id && b.Status == "Fixed");
-        var criticalBugs = await _context.Bugs.CountAsync(b => b.ProjectId == id && b.Priority == "High" && b.Status != "Fixed");
+        if (!projectExists)
+            return NotFound();
 
-        // 4. Find top developer contributor (Most bugs marked as Fixed)
-        // Using AssignedByName directly from your model flat values
+        // Basic statistics
+        var openBugs = await _context.Bugs
+            .CountAsync(b => b.ProjectId == id && b.Status == "notFixed");
+
+        var fixedBugs = await _context.Bugs
+            .CountAsync(b => b.ProjectId == id && b.Status == "Fixed");
+
+        var criticalBugs = await _context.Bugs
+            .CountAsync(b =>
+                b.ProjectId == id &&
+                b.Priority == "High" &&
+                b.Status != "Fixed");
+
+        // Top developer (most fixed bugs)
         var topContributor = await _context.Bugs
-            .Where(b => b.ProjectId == id && b.Status == "Fixed" && b.AssignedByName != null)
-            .GroupBy(b => b.AssignedByName)
+            .Where(b =>
+                b.ProjectId == id &&
+                b.Status == "Fixed" &&
+                b.AssignedById != null)
+            .GroupBy(b => new
+            {
+                b.AssignedById,
+                b.AssignedByName
+            })
             .OrderByDescending(g => g.Count())
-            .Select(g => g.Key)
+            .Select(g => g.Key.AssignedByName)
             .FirstOrDefaultAsync() ?? "None";
 
-        // 5. Find most active tester (Most bugs filed/created)
-        // Since bugs are filed through the system, we can extract who performed the original logged actions, 
-        // or evaluate assignments. If you decide to add a CreatedByName/CreatedByEmail field to your Bug model 
-        // down the road, swap this property there. For now, it queries against assigned tasks:
+        // Most active tester (most created bugs)
         var mostActiveTester = await _context.Bugs
-            .Where(b => b.ProjectId == id && b.AssignedByName != null)
-            .GroupBy(b => b.AssignedByName)
+            .Where(b =>
+                b.ProjectId == id &&
+                b.CreatedById != null)
+            .GroupBy(b => new
+            {
+                b.CreatedById,
+                b.CreatedByName
+            })
             .OrderByDescending(g => g.Count())
-            .Select(g => g.Key)
+            .Select(g => g.Key.CreatedByName)
             .FirstOrDefaultAsync() ?? "None";
 
         return Ok(new ProjectAnalyticsDto

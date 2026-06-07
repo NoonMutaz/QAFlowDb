@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using WebApplication2.Data;
+using WebApplication2.Models;
 using WebApplication2.Models.DTO;
 
 namespace WebApplication2.Controllers;
@@ -68,13 +69,10 @@ public class BugsController : ControllerBase
 
         return Ok(bugs);
     }
-
     [HttpPost]
     public async Task<IActionResult> Create(int projectId, [FromBody] CreateBugDto dto)
     {
-        if (!HasAccess(projectId)) return Forbid();
-
-        var userId = GetUserId();
+        var userId = GetUserId(); //    userId  from   token
 
         var existingBugs = await _context.Bugs
             .Where(b => b.ProjectId == projectId)
@@ -90,7 +88,7 @@ public class BugsController : ControllerBase
                 .Max()
             : 0;
 
-        var bug = new WebApplication2.Models.Bug
+        var bug = new Bug
         {
             BugId = $"BUG-{(lastNumber + 1).ToString().PadLeft(3, '0')}",
             Name = dto.Name,
@@ -102,18 +100,15 @@ public class BugsController : ControllerBase
             Priority = dto.Priority,
             Status = "notFixed",
             CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            ProjectId = projectId
+            ProjectId = projectId,
+            CreatedById = userId.ToString(), //    
         };
 
         _context.Bugs.Add(bug);
         await _context.SaveChangesAsync();
 
-        // LOGGING: Bug Creation
-        await _logger.LogAsync(projectId, userId, "Create", "Bug", bug.Id, $"Created bug {bug.BugId}: {bug.Name}");
-
         return Ok(bug);
     }
-
     [HttpPatch("{bugId}")]
     public async Task<IActionResult> UpdateField(int projectId, int bugId, [FromBody] UpdateFieldDto dto)
     {
