@@ -84,7 +84,8 @@ public class BugsController : ControllerBase
 
         var lastNumber = existingBugs.Count > 0
             ? existingBugs
-                .Select(b => {
+                .Select(b =>
+                {
                     var parts = b.BugId.Split("-");
                     return parts.Length > 1 && int.TryParse(parts[1], out var n) ? n : 0;
                 })

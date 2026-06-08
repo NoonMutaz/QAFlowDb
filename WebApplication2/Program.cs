@@ -3,11 +3,19 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 using System.Text;
+using System.Text.Json.Serialization; // Added for cycle handling
 using WebApplication2.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+// Fixed: Added JsonOptions to prevent 500 serialization loop crashes
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+    });
+
 builder.Services.AddOpenApi();
 builder.Services.AddScoped<ActivityLogger>();
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -53,20 +61,20 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-//  Auto-run migrations on startup
+// Auto-run migrations on startup
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     db.Database.Migrate();
 }
 
-//  Show Scalar in both dev and production
+// Show Scalar in both dev and production
 app.MapOpenApi();
 app.MapScalarApiReference();
 
 if (!app.Environment.IsDevelopment())
 {
-    app.UseHttpsRedirection(); //  only redirect in production when behind HTTPS proxy
+    app.UseHttpsRedirection(); // only redirect in production when behind HTTPS proxy
 }
 
 app.UseStaticFiles();

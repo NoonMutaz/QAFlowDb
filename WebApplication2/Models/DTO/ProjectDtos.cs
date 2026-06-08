@@ -40,7 +40,7 @@ namespace WebApplication2.Models.DTO
         [Required]
         public string Type { get; set; } = "";
 
-       
+
     }
 
     //  ADD: DTO for member role updates

@@ -35,7 +35,7 @@ namespace WebApplication2.Models
         public int? TestCaseId { get; set; }
 
         // Navigation Property
-        
+
         public TestCase? TestCase { get; set; }
     }
 }

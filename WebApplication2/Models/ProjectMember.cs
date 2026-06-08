@@ -1,6 +1,6 @@
 ﻿namespace WebApplication2.Models
 {
-    
+
     public class ProjectMember
     {
         public int Id { get; set; }

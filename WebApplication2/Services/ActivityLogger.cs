@@ -1,5 +1,4 @@
 ﻿using WebApplication2.Data;
-using WebApplication2.Models;
 
 public class ActivityLogger
 {
