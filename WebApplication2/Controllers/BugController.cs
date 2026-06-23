@@ -6,6 +6,7 @@ using System.Security.Claims;
 using WebApplication2.Data;
 using WebApplication2.Models;
 using WebApplication2.Models.DTO;
+using WebApplication2.Extensions;
 
 namespace WebApplication2.Controllers;
 
@@ -45,23 +46,35 @@ public class BugsController : ControllerBase
         return userId;
     }
 
-    private bool HasAccess(int projectId)
-    {
-        var userId = GetUserId();
-        return _context.ProjectMembers.Any(m =>
-            m.ProjectId == projectId &&
-            m.UserId == userId &&
-            m.Status == "accepted");
-    }
+    #region Helpers & Authentication
 
+    private async Task<bool> HasAccessAsync(int projectId)
+    {
+        try
+        {
+            // Use the extension method directly
+            var userId = User.GetUserId();
+
+            return await _context.ProjectMembers.AnyAsync(m =>
+                m.ProjectId == projectId &&
+                m.UserId == userId &&
+                m.Status == "accepted");
+        }
+        catch (Exception)
+        {
+            // If the token is invalid or missing, HasAccess is false
+            return false;
+        }
+    }
     #endregion
 
     #region Endpoints
 
+    // Example of the updated endpoint pattern:
     [HttpGet]
     public async Task<IActionResult> Get(int projectId)
     {
-        if (!HasAccess(projectId)) return Forbid();
+        if (!await HasAccessAsync(projectId)) return Forbid();
 
         var bugs = await _context.Bugs
             .Include(b => b.TestCase)
@@ -70,6 +83,8 @@ public class BugsController : ControllerBase
 
         return Ok(bugs);
     }
+
+    #endregion
     [HttpPost]
     public async Task<IActionResult> Create(int projectId, [FromBody] CreateBugDto dto)
     {
@@ -131,9 +146,9 @@ public class BugsController : ControllerBase
     {
         try
         {
-            if (!HasAccess(projectId)) return Forbid();
+            if (!await HasAccessAsync(projectId)) return Forbid();
 
-            var userId = GetUserId();
+            var userId = User.GetUserId();
 
             var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
                 b.Id == bugId && b.ProjectId == projectId);
@@ -234,7 +249,7 @@ public class BugsController : ControllerBase
     [HttpPatch("{bugId}/status")]
     public async Task<IActionResult> Status(int projectId, int bugId, [FromBody] UpdateStatusDto dto)
     {
-        if (!HasAccess(projectId)) return Forbid();
+        if (!await HasAccessAsync(projectId)) return Forbid();
 
         var userId = GetUserId();
         var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
@@ -255,7 +270,7 @@ public class BugsController : ControllerBase
     [HttpPatch("{bugId}/priority")]
     public async Task<IActionResult> Priority(int projectId, int bugId, [FromBody] UpdatePriorityDto dto)
     {
-        if (!HasAccess(projectId)) return Forbid();
+        if (!await HasAccessAsync(projectId)) return Forbid();
 
         var userId = GetUserId();
         var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
@@ -276,7 +291,7 @@ public class BugsController : ControllerBase
     [HttpDelete("{bugId}")]
     public async Task<IActionResult> Delete(int projectId, int bugId)
     {
-        if (!HasAccess(projectId)) return Forbid();
+        if (!await HasAccessAsync(projectId)) return Forbid();
 
         var userId = GetUserId();
         var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
@@ -296,9 +311,9 @@ public class BugsController : ControllerBase
     [HttpPost("{bugId}/upload")]
     public async Task<IActionResult> Upload(int projectId, int bugId, IFormFile file)
     {
-        if (!HasAccess(projectId)) return Forbid();
+        if (!await HasAccessAsync(projectId)) return Forbid();
 
-        var userId = GetUserId();
+        var userId = User.GetUserId();
         var bug = await _context.Bugs.FirstOrDefaultAsync(b =>
             b.Id == bugId && b.ProjectId == projectId);
 
@@ -329,33 +344,33 @@ public class BugsController : ControllerBase
 
 
 
-    [HttpGet("/api/bugs/me")]
-    public async Task<IActionResult> GetMyAssignedBugs()
-    {
-        try
-        {
-            var claimValue = User.FindFirstValue(ClaimTypes.NameIdentifier) ??
-                             User.FindFirstValue("id") ??
-                             User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    //[HttpGet("/api/bugs/me")]
+    //public async Task<IActionResult> GetMyAssignedBugs()
+    //{
+    //    try
+    //    {
+    //        var claimValue = User.FindFirstValue(ClaimTypes.NameIdentifier) ??
+    //                         User.FindFirstValue("id") ??
+    //                         User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
 
-            if (string.IsNullOrEmpty(claimValue) || !int.TryParse(claimValue, out int userId))
-            {
-                return Unauthorized(new { message = "User identification token is invalid or missing." });
-            }
+    //        if (string.IsNullOrEmpty(claimValue) || !int.TryParse(claimValue, out int userId))
+    //        {
+    //            return Unauthorized(new { message = "User identification token is invalid or missing." });
+    //        }
 
-            var myBugs = await _context.Bugs
-                .Where(b => b.AssignedToUserId == userId)
-                .OrderByDescending(b => b.Priority == "High")
-                .ThenByDescending(b => b.Id)
-                .ToListAsync();
+    //        var myBugs = await _context.Bugs
+    //            .Where(b => b.AssignedToUserId == userId)
+    //            .OrderByDescending(b => b.Priority == "High")
+    //            .ThenByDescending(b => b.Id)
+    //            .ToListAsync();
 
-            return Ok(myBugs);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"GetMyAssignedBugs error: {ex}");
-            return StatusCode(500, "Internal server error");
-        }
-    }
+    //        return Ok(myBugs);
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        Console.WriteLine($"GetMyAssignedBugs error: {ex}");
+    //        return StatusCode(500, "Internal server error");
+    //    }
+    //}
     #endregion
 }
