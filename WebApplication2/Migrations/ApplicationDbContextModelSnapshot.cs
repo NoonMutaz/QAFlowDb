@@ -227,6 +227,46 @@ namespace WebApplication2.Migrations
                     b.ToTable("ProjectDocuments");
                 });
 
+            modelBuilder.Entity("WebApplication2.Models.ProjectPhase", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ClauseIds")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EndDate")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("StartDate")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("ProjectPhases");
+                });
+
             modelBuilder.Entity("WebApplication2.Models.ProjectMember", b =>
                 {
                     b.Property<int>("Id")
@@ -409,6 +449,17 @@ namespace WebApplication2.Migrations
                 });
 
             modelBuilder.Entity("WebApplication2.Models.ProjectDocument", b =>
+                {
+                    b.HasOne("WebApplication2.Models.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("WebApplication2.Models.ProjectPhase", b =>
                 {
                     b.HasOne("WebApplication2.Models.Project", "Project")
                         .WithMany()

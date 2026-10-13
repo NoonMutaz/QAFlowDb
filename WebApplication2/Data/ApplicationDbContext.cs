@@ -20,6 +20,7 @@ namespace WebApplication2.Data
         public DbSet<TestCase> TestCases { get; set; }
         public DbSet<SbcClause> SbcClauses { get; set; }
         public DbSet<ProjectDocument> ProjectDocuments { get; set; }
+        public DbSet<ProjectPhase> ProjectPhases { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<User>()
@@ -32,6 +33,17 @@ namespace WebApplication2.Data
             v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
             v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>()
         );
+
+            // phase clause ids stored as a JSON array, like TestCase.Steps
+            modelBuilder.Entity<ProjectPhase>()
+                .Property(p => p.ClauseIds)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => JsonSerializer.Deserialize<List<int>>(v, (JsonSerializerOptions?)null) ?? new List<int>(),
+                    new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<int>>(
+                        (a, b) => (a ?? new List<int>()).SequenceEqual(b ?? new List<int>()),
+                        v => v.Aggregate(0, (h, x) => HashCode.Combine(h, x)),
+                        v => v.ToList()));
         }
     }
 
