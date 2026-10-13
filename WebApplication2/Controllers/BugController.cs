@@ -66,6 +66,39 @@ public class BugsController : ControllerBase
             return false;
         }
     }
+
+    private async Task<bool> IsOwnerAsync(int projectId)
+    {
+        try
+        {
+            var userId = User.GetUserId();
+            return await _context.ProjectMembers.AnyAsync(m =>
+                m.ProjectId == projectId &&
+                m.UserId == userId &&
+                m.Status == "accepted" &&
+                m.Role == "owner");
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static readonly string[] AllowedUploadTypes =
+        { "image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4", "video/webm" };
+
+    /// <summary>Saves an uploaded file under wwwroot/uploads and returns its public path.</summary>
+    private static async Task<string> SaveUploadAsync(IFormFile file)
+    {
+        var folder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+        Directory.CreateDirectory(folder);
+
+        var fileName = $"{Guid.NewGuid()}_{Path.GetFileName(file.FileName)}";
+        using (var stream = new FileStream(Path.Combine(folder, fileName), FileMode.Create))
+            await file.CopyToAsync(stream);
+
+        return $"/uploads/{fileName}";
+    }
     #endregion
 
     #region Endpoints
@@ -90,7 +123,7 @@ public class BugsController : ControllerBase
     {
         var userId = GetUserId(); // userId from token
 
-        // 💥 FIX: Fetch the user's details to populate the missing 'CreatedByName' property
+        //   Fetch the user's details to populate the missing 'CreatedByName' property
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
 
         var existingBugs = await _context.Bugs
@@ -110,7 +143,7 @@ public class BugsController : ControllerBase
 
         var bug = new Bug
         {
-            BugId = $"BUG-{(lastNumber + 1).ToString().PadLeft(3, '0')}",
+            BugId = $"SBC-{(lastNumber + 1).ToString().PadLeft(3, '0')}",
             Name = dto.Name,
             Description = dto.Description,
             Url = dto.Url,
@@ -136,7 +169,7 @@ public class BugsController : ControllerBase
             "Create",
             "Bug",
             bug.Id,
-            $"Reported a new bug {bug.BugId}: {bug.Name}"
+            $"{bug.Name} Reported a new bug: {bug.BugId} "
         );
 
         return Ok(bug);
@@ -257,6 +290,12 @@ public class BugsController : ControllerBase
 
         if (bug == null) return NotFound();
 
+        // Closing goes through review: assignees submit evidence via /resolve and the owner approves.
+        if (dto.Status == "pendingReview")
+            return BadRequest("Use the resolve endpoint with an evidence photo to submit a fix for review.");
+        if (dto.Status == "fixed" && !await IsOwnerAsync(projectId))
+            return BadRequest("Upload a photo of the fix and submit it for the owner's review.");
+
         var oldStatus = bug.Status;
         bug.Status = dto.Status;
         await _context.SaveChangesAsync();
@@ -319,26 +358,76 @@ public class BugsController : ControllerBase
 
         if (bug == null) return NotFound();
         if (file == null || file.Length == 0) return BadRequest("No file uploaded");
+        if (!AllowedUploadTypes.Contains(file.ContentType)) return BadRequest("Invalid file type");
 
-        var allowed = new[] { "image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4", "video/webm" };
-        if (!allowed.Contains(file.ContentType)) return BadRequest("Invalid file type");
-
-        var folder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-        Directory.CreateDirectory(folder);
-
-        var fileName = $"{Guid.NewGuid()}_{Path.GetFileName(file.FileName)}";
-        var filePath = Path.Combine(folder, fileName);
-
-        using (var stream = new FileStream(filePath, FileMode.Create))
-            await file.CopyToAsync(stream);
-
-        bug.AttachmentUrl = $"/uploads/{fileName}";
+        bug.AttachmentUrl = await SaveUploadAsync(file);
         await _context.SaveChangesAsync();
 
         // LOGGING: File Attachment Upload
         await _logger.LogAsync(projectId, userId, "UploadAttachment", "Bug", bug.Id, $"Uploaded attachment context for {bug.BugId}");
 
-        return Ok(new { url = bug.AttachmentUrl });
+        // attachmentUrl is what the dashboard table reads; url kept for older callers
+        return Ok(new { url = bug.AttachmentUrl, attachmentUrl = bug.AttachmentUrl });
+    }
+
+    /// <summary>
+    /// The assignee submits a fix: a photo of the corrected work is required.
+    /// The bug moves to "pendingReview" until the project owner approves or rejects it.
+    /// </summary>
+    [HttpPost("{bugId}/resolve")]
+    public async Task<IActionResult> Resolve(int projectId, int bugId, IFormFile file)
+    {
+        if (!await HasAccessAsync(projectId)) return Forbid();
+
+        var userId = User.GetUserId();
+        var bug = await _context.Bugs.FirstOrDefaultAsync(b => b.Id == bugId && b.ProjectId == projectId);
+        if (bug == null) return NotFound();
+
+        if (bug.AssignedToUserId != userId && !await IsOwnerAsync(projectId))
+            return Forbid();
+        if (bug.Status == "fixed") return BadRequest("This finding is already closed.");
+        if (file == null || file.Length == 0) return BadRequest("A photo of the fix is required.");
+        if (!file.ContentType.StartsWith("image/") || !AllowedUploadTypes.Contains(file.ContentType))
+            return BadRequest("The evidence must be an image (JPG, PNG, GIF or WebP).");
+
+        bug.ResolutionEvidenceUrl = await SaveUploadAsync(file);
+        bug.Status = "pendingReview";
+        bug.SubmittedForReviewAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        bug.ReviewComment = null;
+        await _context.SaveChangesAsync();
+
+        await _logger.LogAsync(projectId, userId, "SubmitForReview", "Bug", bug.Id, $"Submitted a fix for {bug.BugId} for review");
+
+        return Ok(bug);
+    }
+
+    /// <summary>
+    /// The project owner reviews a submitted fix. Approve closes it ("fixed");
+    /// reject sends it back to the assignee ("notFixed") with the reason.
+    /// </summary>
+    [HttpPost("{bugId}/review")]
+    public async Task<IActionResult> Review(int projectId, int bugId, [FromBody] ReviewFixDto dto)
+    {
+        if (!await IsOwnerAsync(projectId)) return Forbid();
+
+        var userId = User.GetUserId();
+        var bug = await _context.Bugs.FirstOrDefaultAsync(b => b.Id == bugId && b.ProjectId == projectId);
+        if (bug == null) return NotFound();
+        if (bug.Status != "pendingReview") return BadRequest("This finding is not waiting for review.");
+
+        var comment = dto.Comment?.Trim();
+        if (!dto.Approve && string.IsNullOrEmpty(comment))
+            return BadRequest("Please give a reason for rejecting the fix.");
+
+        bug.Status = dto.Approve ? "fixed" : "notFixed";
+        bug.ReviewComment = dto.Approve ? null : comment;
+        await _context.SaveChangesAsync();
+
+        await _logger.LogAsync(
+            projectId, userId, dto.Approve ? "ApproveFix" : "RejectFix", "Bug", bug.Id,
+            dto.Approve ? $"Approved the fix for {bug.BugId}" : $"Rejected the fix for {bug.BugId}: {comment}");
+
+        return Ok(bug);
     }
 
 

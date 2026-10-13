@@ -20,4 +20,11 @@
     }
     public class UpdateStatusDto { public string Status { get; set; } = ""; }
     public class UpdatePriorityDto { public string Priority { get; set; } = ""; }
+
+    /// <summary>Owner's decision on a fix submitted for review.</summary>
+    public class ReviewFixDto
+    {
+        public bool Approve { get; set; }
+        public string? Comment { get; set; }
+    }
 }

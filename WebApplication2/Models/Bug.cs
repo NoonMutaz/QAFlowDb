@@ -19,6 +19,12 @@ namespace WebApplication2.Models
 
         public string? AttachmentUrl { get; set; }
 
+        // Fix review: the assignee uploads proof (status -> "pendingReview"),
+        // then the project owner approves (-> "fixed") or rejects (-> "notFixed" + reason).
+        public string? ResolutionEvidenceUrl { get; set; }
+        public string? ReviewComment { get; set; }
+        public long? SubmittedForReviewAt { get; set; }
+
         [JsonIgnore] // ◄ Prevents serialization loops back into the project details
         public Project Project { get; set; } = null!;
 

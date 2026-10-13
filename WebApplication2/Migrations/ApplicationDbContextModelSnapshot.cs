@@ -128,9 +128,18 @@ namespace WebApplication2.Migrations
                     b.Property<int>("ProjectId")
                         .HasColumnType("int");
 
+                    b.Property<string>("ResolutionEvidenceUrl")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ReviewComment")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<long?>("SubmittedForReviewAt")
+                        .HasColumnType("bigint");
 
                     b.Property<int?>("TestCaseId")
                         .HasColumnType("int");
@@ -210,6 +219,54 @@ namespace WebApplication2.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("ProjectMembers");
+                });
+
+            modelBuilder.Entity("WebApplication2.Models.SbcClause", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CodeType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CodeVersion")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("CreatedById")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("LastVerifiedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("RequirementText")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SectionNumber")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SourceUrl")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("VerifiedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SbcClauses");
                 });
 
             modelBuilder.Entity("WebApplication2.Models.TestCase", b =>
