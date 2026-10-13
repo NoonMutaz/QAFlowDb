@@ -12,6 +12,9 @@ namespace WebApplication2.Models
 
         public string ExpectedResult { get; set; } = "";
 
+        /// <summary>Manual inspection result when no finding is linked: "passed", "failed" or null.</summary>
+        public string? Status { get; set; }
+
         public int ProjectId { get; set; }
 
         [JsonIgnore] //   Prevents fetching the project parent data infinitely

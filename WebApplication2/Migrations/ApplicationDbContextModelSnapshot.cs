@@ -185,6 +185,48 @@ namespace WebApplication2.Migrations
                     b.ToTable("Projects");
                 });
 
+            modelBuilder.Entity("WebApplication2.Models.ProjectDocument", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AiSummary")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("UploadedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("UploadedById")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("ProjectDocuments");
+                });
+
             modelBuilder.Entity("WebApplication2.Models.ProjectMember", b =>
                 {
                     b.Property<int>("Id")
@@ -284,6 +326,9 @@ namespace WebApplication2.Migrations
                     b.Property<int>("ProjectId")
                         .HasColumnType("int");
 
+                    b.Property<string>("Status")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Steps")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -361,6 +406,17 @@ namespace WebApplication2.Migrations
                     b.Navigation("Project");
 
                     b.Navigation("TestCase");
+                });
+
+            modelBuilder.Entity("WebApplication2.Models.ProjectDocument", b =>
+                {
+                    b.HasOne("WebApplication2.Models.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
                 });
 
             modelBuilder.Entity("WebApplication2.Models.ProjectMember", b =>

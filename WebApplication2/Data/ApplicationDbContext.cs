@@ -19,6 +19,7 @@ namespace WebApplication2.Data
         public DbSet<ActivityLog> ActivityLogs { get; set; }
         public DbSet<TestCase> TestCases { get; set; }
         public DbSet<SbcClause> SbcClauses { get; set; }
+        public DbSet<ProjectDocument> ProjectDocuments { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<User>()
