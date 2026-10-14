@@ -137,4 +137,115 @@ public class ProjectPhasesController : ControllerBase
         await _logger.LogAsync(projectId, User.GetUserId(), "Delete", "Phase", phaseId, $"Deleted phase {phase.Name}");
         return NoContent();
     }
+
+    private async Task<bool> IsOwnerAsync(int projectId)
+    {
+        try
+        {
+            var userId = User.GetUserId();
+            return await _context.ProjectMembers.AnyAsync(m =>
+                m.ProjectId == projectId && m.UserId == userId && m.Status == "accepted" && m.Role == "owner");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// A clause is done when it has findings and all are fixed, or it has none and was marked compliant.
+    /// Returns the titles of the clauses that are still open.
+    /// </summary>
+    private async Task<List<string>> OpenClausesAsync(int projectId, List<int> clauseIds)
+    {
+        var clauses = await _context.TestCases
+            .Where(t => t.ProjectId == projectId && clauseIds.Contains(t.Id))
+            .Select(t => new { t.Title, t.Status, Bugs = t.LinkedBugs.Select(b => b.Status).ToList() })
+            .ToListAsync();
+
+        return clauses
+            .Where(c => c.Bugs.Count > 0 ? c.Bugs.Any(s => s != "fixed") : c.Status != "passed")
+            .Select(c => c.Title)
+            .ToList();
+    }
+
+    /// <summary>The owner closes a phase. Refused while any of its clauses is still open (the phase stays locked).</summary>
+    [HttpPost("{phaseId}/close")]
+    public async Task<IActionResult> Close(int projectId, int phaseId)
+    {
+        if (!await IsOwnerAsync(projectId)) return Forbid();
+        var phase = await _context.ProjectPhases.FirstOrDefaultAsync(p => p.Id == phaseId && p.ProjectId == projectId);
+        if (phase == null) return NotFound();
+        if (phase.ClosedAt != null) return BadRequest("This phase is already closed.");
+        if (phase.ClauseIds.Count == 0) return BadRequest("Add SBC clauses to the phase before closing it.");
+
+        var open = await OpenClausesAsync(projectId, phase.ClauseIds);
+        if (open.Count > 0)
+            return Conflict(new { message = "The phase stays locked until all its clauses are done.", openClauses = open });
+
+        var userId = User.GetUserId();
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+        phase.ClosedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        phase.ClosedByName = user?.Name ?? user?.Email;
+        await _context.SaveChangesAsync();
+
+        await _logger.LogAsync(projectId, userId, "Close", "Phase", phase.Id, $"Closed phase {phase.Name}");
+        return Ok(phase);
+    }
+
+    [HttpPost("{phaseId}/reopen")]
+    public async Task<IActionResult> Reopen(int projectId, int phaseId)
+    {
+        if (!await IsOwnerAsync(projectId)) return Forbid();
+        var phase = await _context.ProjectPhases.FirstOrDefaultAsync(p => p.Id == phaseId && p.ProjectId == projectId);
+        if (phase == null) return NotFound();
+
+        phase.ClosedAt = null;
+        phase.ClosedByName = null;
+        await _context.SaveChangesAsync();
+
+        await _logger.LogAsync(projectId, User.GetUserId(), "Reopen", "Phase", phase.Id, $"Reopened phase {phase.Name}");
+        return Ok(phase);
+    }
+
+    /// <summary>Everything the phase report shows: the phase, its clauses, and each clause's findings with before/after evidence.</summary>
+    [HttpGet("{phaseId}/report")]
+    public async Task<IActionResult> Report(int projectId, int phaseId)
+    {
+        if (!await IsMemberAsync(projectId)) return Forbid();
+        var phase = await _context.ProjectPhases.FirstOrDefaultAsync(p => p.Id == phaseId && p.ProjectId == projectId);
+        if (phase == null) return NotFound();
+
+        var project = await _context.Projects.Where(p => p.Id == projectId).Select(p => new { p.Id, p.Name }).FirstOrDefaultAsync();
+        var clauses = await _context.TestCases
+            .Where(t => t.ProjectId == projectId && phase.ClauseIds.Contains(t.Id))
+            .Select(t => new
+            {
+                t.Id,
+                t.Title,
+                t.ExpectedResult,
+                t.Status,
+                Findings = t.LinkedBugs.Select(b => new
+                {
+                    b.Id,
+                    b.BugId,
+                    b.Status,
+                    b.Priority,
+                    b.Url,
+                    b.ActualResult,
+                    b.Description,
+                    b.CreatedAt,
+                    b.CreatedByName,
+                    b.AssignedToEmail,
+                    b.Deadline,
+                    b.AttachmentUrl,
+                    b.ResolutionEvidenceUrl,
+                    b.ReviewedByName,
+                    b.ReviewedAt,
+                }).ToList(),
+            })
+            .ToListAsync();
+
+        return Ok(new { project, phase, clauses });
+    }
 }

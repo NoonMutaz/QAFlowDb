@@ -207,6 +207,21 @@ public class BugsController : ControllerBase
                 case "note":
                     bug.Note = dto.Value;
                     break;
+                case "deadline":
+                    if (string.IsNullOrWhiteSpace(dto.Value))
+                    {
+                        bug.Deadline = null;
+                        logDetails = "Cleared the deadline";
+                    }
+                    else
+                    {
+                        var day = dto.Value.Length >= 10 ? dto.Value[..10] : dto.Value;
+                        if (!DateOnly.TryParseExact(day, "yyyy-MM-dd", out _))
+                            return BadRequest("Deadline must be a date (YYYY-MM-DD).");
+                        bug.Deadline = day;
+                        logDetails = $"Set the deadline to {day}";
+                    }
+                    break;
                 case "assignedtouserid":
                     if (string.IsNullOrWhiteSpace(dto.Value))
                     {
@@ -265,7 +280,8 @@ public class BugsController : ControllerBase
                 bug.AssignedToEmail,
                 bug.AssignedById,
                 bug.AssignedByName,
-                bug.AssignedAt
+                bug.AssignedAt,
+                bug.Deadline
             });
         }
         catch (UnauthorizedAccessException)
@@ -421,6 +437,12 @@ public class BugsController : ControllerBase
 
         bug.Status = dto.Approve ? "fixed" : "notFixed";
         bug.ReviewComment = dto.Approve ? null : comment;
+        if (dto.Approve)
+        {
+            var reviewer = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            bug.ReviewedByName = reviewer?.Name ?? reviewer?.Email;
+            bug.ReviewedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        }
         await _context.SaveChangesAsync();
 
         await _logger.LogAsync(

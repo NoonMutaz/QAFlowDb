@@ -131,6 +131,15 @@ namespace WebApplication2.Migrations
                     b.Property<string>("ResolutionEvidenceUrl")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<long?>("ReviewedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ReviewedByName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Deadline")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("ReviewComment")
                         .HasColumnType("nvarchar(max)");
 
@@ -237,6 +246,12 @@ namespace WebApplication2.Migrations
 
                     b.Property<string>("ClauseIds")
                         .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long?>("ClosedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ClosedByName")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<long>("CreatedAt")

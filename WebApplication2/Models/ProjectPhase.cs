@@ -25,5 +25,9 @@ namespace WebApplication2.Models
         public List<int> ClauseIds { get; set; } = new();
 
         public long CreatedAt { get; set; }
+
+        /// <summary>Set when the owner closes the phase; a phase can close only when all its clauses are done.</summary>
+        public long? ClosedAt { get; set; }
+        public string? ClosedByName { get; set; }
     }
 }

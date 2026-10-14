@@ -24,6 +24,12 @@ namespace WebApplication2.Models
         public string? ResolutionEvidenceUrl { get; set; }
         public string? ReviewComment { get; set; }
         public long? SubmittedForReviewAt { get; set; }
+        /// <summary>Who approved the fix and when (shown in the phase report).</summary>
+        public string? ReviewedByName { get; set; }
+        public long? ReviewedAt { get; set; }
+
+        /// <summary>Due date of the assignment, "YYYY-MM-DD".</summary>
+        public string? Deadline { get; set; }
 
         [JsonIgnore] // ◄ Prevents serialization loops back into the project details
         public Project Project { get; set; } = null!;
