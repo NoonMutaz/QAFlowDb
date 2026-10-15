@@ -26,6 +26,7 @@ public class ProjectDocumentsController : ControllerBase
     }
 
     public class SummaryDto { public string? Summary { get; set; } }
+    public class ReviewDto { public string? Review { get; set; } }
 
     private async Task<bool> IsMemberAsync(int projectId, bool editorsOnly = false)
     {
@@ -100,6 +101,23 @@ public class ProjectDocumentsController : ControllerBase
 
         doc.AiSummary = string.IsNullOrWhiteSpace(dto.Summary) ? null : dto.Summary.Trim();
         await _context.SaveChangesAsync();
+        return Ok(doc);
+    }
+
+    /// <summary>Stores the AI's comparison of the drawing with the SBC (JSON from the Next.js AI route).</summary>
+    [HttpPut("{docId}/review")]
+    public async Task<IActionResult> SaveReview(int projectId, int docId, [FromBody] ReviewDto dto)
+    {
+        if (!await IsMemberAsync(projectId, editorsOnly: true)) return Forbid();
+
+        var doc = await _context.ProjectDocuments.FirstOrDefaultAsync(d => d.Id == docId && d.ProjectId == projectId);
+        if (doc == null) return NotFound();
+
+        doc.AiReview = string.IsNullOrWhiteSpace(dto.Review) ? null : dto.Review.Trim();
+        doc.AiReviewedAt = doc.AiReview == null ? null : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        await _context.SaveChangesAsync();
+
+        await _logger.LogAsync(projectId, User.GetUserId(), "ReviewDrawing", "ProjectDocument", doc.Id, $"AI compared {doc.FileName} with the SBC");
         return Ok(doc);
     }
 

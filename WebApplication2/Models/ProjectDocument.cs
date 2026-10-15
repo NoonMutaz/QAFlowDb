@@ -22,6 +22,10 @@ namespace WebApplication2.Models
         /// <summary>Design facts an inspector can check on site, written by the AI from the file.</summary>
         public string? AiSummary { get; set; }
 
+        /// <summary>AI comparison of the drawing with the SBC (JSON written by the Next.js AI route).</summary>
+        public string? AiReview { get; set; }
+        public long? AiReviewedAt { get; set; }
+
         public int? UploadedById { get; set; }
         public long UploadedAt { get; set; }
     }
